@@ -1,128 +1,70 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Location capture (consent required)</title>
-  <style>
-    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
-    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;background:#f5f7fb;color:#111;padding:20px;}
-    .card{max-width:720px;width:100%;background:#fff;border-radius:12px;padding:18px;box-shadow:0 6px 30px rgba(20,30,60,.08);}
-    h1{margin:0 0 8px;font-size:1.1rem;}
-    p{margin:6px 0;color:#333;}
-    .muted{color:#666;font-size:0.9rem;}
-    button{background:#0b63d6;color:#fff;border:0;padding:10px 14px;border-radius:8px;font-weight:600;cursor:pointer;}
-    .small{font-size:0.85rem;color:#555;margin-top:12px;}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPS → Address Capture</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:20px;}
+  #status{margin-top:12px; white-space: pre-line;}
+  button{padding:8px 12px; margin-top:12px; cursor:pointer;}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card" role="main" aria-live="polite">
-      <h1>One-time location (must allow)</h1>
-      <p class="muted">This page will request location permission. If you grant it, coordinates are sent (optional) and you will be redirected to Google.</p>
-
-      <div style="margin-top:12px;">
-        <button id="startBtn">Start (if nothing happened)</button>
-      </div>
-
-      <p class="small" id="status">Status: idle</p>
-
-      <p class="muted" style="margin-top:12px;">
-        NOTE: You must have explicit consent. The browser will show a visible permission prompt — it cannot be suppressed.
-      </p>
-    </div>
-  </div>
+<h2>GPS → Address Capture (Consent Required)</h2>
+<p id="status">Status: idle</p>
+<button id="startBtn">Get Location</button>
 
 <script>
-/*
-  Configure:
-  - WEBHOOK_URL: optional. If blank, coordinates are shown locally instead.
-  - TOKEN: optional. If set, sent as Authorization: Bearer <TOKEN>.
-*/
-const WEBHOOK_URL = ""; // e.g., "https://webhook.site/your-id"
-const TOKEN = "";       // optional auth token
-
 const STATUS = document.getElementById('status');
 const startBtn = document.getElementById('startBtn');
 
-function setStatus(s){ STATUS.textContent = 'Status: ' + s; }
+function setStatus(msg){ STATUS.textContent = 'Status: ' + msg; }
 
-async function sendPayload(payload){
-  if (!WEBHOOK_URL) { 
-    // Show coordinates if no endpoint set
-    setStatus(`Captured locally — Latitude: ${payload.latitude}, Longitude: ${payload.longitude}, Accuracy: ${payload.accuracy_m}m`);
-    setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 1500);
-    return; 
-  }
-  const body = JSON.stringify(payload);
-  try {
-    if (navigator.sendBeacon) {
-      const blob = new Blob([body], {type: 'application/json'});
-      const ok = navigator.sendBeacon(WEBHOOK_URL, blob);
-      if (ok) { setStatus('Sent via sendBeacon.'); return; }
-    }
-  } catch(e){}
-
-  try {
-    const headers = {'Content-Type':'application/json'};
-    if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
-    await fetch(WEBHOOK_URL, {method:'POST', headers, body, keepalive:true});
-    setStatus('Posted via fetch (keepalive).');
-  } catch (e) {
-    setStatus('Post failed: ' + (e && e.message ? e.message : e));
-  }
+function reverseGeocode(lat, lon){
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+  fetch(url, {headers: {'User-Agent':'High-Precision-GPS-Test'}})
+    .then(res=>res.json())
+    .then(data=>{
+      if(data.error){
+        setStatus(`Coordinates: ${lat}, ${lon}\nReverse geocoding failed: ${data.error}`);
+      } else {
+        setStatus(`Coordinates:\nLatitude: ${lat}\nLongitude: ${lon}\n\nApprox. Address:\n${data.display_name}`);
+      }
+      // Redirect after 3 seconds
+      setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 3000);
+    })
+    .catch(err=>{
+      setStatus(`Coordinates: ${lat}, ${lon}\nReverse geocoding failed: ${err}`);
+      setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 3000);
+    });
 }
 
-function onSuccess(pos){
-  const c = pos.coords;
-  const payload = {
-    latitude: c.latitude,
-    longitude: c.longitude,
-    accuracy_m: c.accuracy ?? null,
-    altitude_m: c.altitude ?? null,
-    altitude_accuracy_m: c.altitudeAccuracy ?? null,
-    heading_deg: c.heading ?? null,
-    speed_mps: c.speed ?? null,
-    timestamp_ms: pos.timestamp,
-    iso_time: new Date(pos.timestamp).toISOString(),
-    user_agent: navigator.userAgent
-  };
-  setStatus('Location obtained — sending then redirecting...');
-  sendPayload(payload).finally(()=>{
-    if (WEBHOOK_URL) setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 350);
-  });
+function onSuccess(position){
+  const c = position.coords;
+  setStatus('Location obtained. Reverse geocoding...');
+  reverseGeocode(c.latitude, c.longitude);
 }
 
 function onError(err){
-  setStatus('Geolocation error: ' + (err && err.message ? err.message : err));
-  setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 900);
+  setStatus(`Geolocation error: ${err.message || err}`);
+  setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 2000);
 }
 
-function requestLocationOnce(){
-  if (!('geolocation' in navigator)){
-    setStatus('Geolocation API not available in this browser.');
+function getLocation(){
+  if(!('geolocation' in navigator)){
+    setStatus('Geolocation not supported.');
     return;
   }
-  setStatus('Requesting permission...');
-  try {
-    navigator.geolocation.getCurrentPosition(onSuccess, onError, {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 20000
-    });
-  } catch(e){
-    setStatus('Request failed: ' + e.message);
-    setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 900);
-  }
+  setStatus('Requesting high-accuracy GPS...');
+  navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+    enableHighAccuracy: true,
+    timeout: 30000,
+    maximumAge: 0
+  });
 }
 
-// Require user gesture for reliability (especially on Safari)
-startBtn.addEventListener('click', requestLocationOnce);
-
-// Optional: try auto-start after small delay (may be blocked in some browsers)
-try {
-  setTimeout(requestLocationOnce, 300);
-} catch(e){}
+startBtn.addEventListener('click', getLocation);
 </script>
 </body>
 </html>
