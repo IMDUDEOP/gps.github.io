@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Location capture (consent required)</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;background:#f5f7fb;color:#111;padding:20px;}
+    .card{max-width:720px;width:100%;background:#fff;border-radius:12px;padding:18px;box-shadow:0 6px 30px rgba(20,30,60,.08);}
+    h1{margin:0 0 8px;font-size:1.1rem;}
+    p{margin:6px 0;color:#333;}
+    .muted{color:#666;font-size:0.9rem;}
+    button{background:#0b63d6;color:#fff;border:0;padding:10px 14px;border-radius:8px;font-weight:600;cursor:pointer;}
+    .small{font-size:0.85rem;color:#555;margin-top:12px;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="main" aria-live="polite">
+      <h1>One-time location (must allow)</h1>
+      <p class="muted">This page will request location permission. If you grant it, coordinates are sent (optional) and you will be redirected to Google.</p>
+
+      <div style="margin-top:12px;">
+        <button id="startBtn">Start (if nothing happened)</button>
+      </div>
+
+      <p class="small" id="status">Status: idle</p>
+
+      <p class="muted" style="margin-top:12px;">
+        NOTE: You must have explicit consent. The browser will show a visible permission prompt — it cannot be suppressed.
+      </p>
+    </div>
+  </div>
+
+<script>
+/*
+  Configure:
+  - WEBHOOK_URL: optional. If blank, no POST will be made.
+  - TOKEN: optional. If set, sent as Authorization: Bearer <TOKEN>.
+*/
+const WEBHOOK_URL = ""; // e.g. "https://webhook.site/your-id" or leave empty
+const TOKEN = "";       // optional auth token
+
+const STATUS = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+
+function setStatus(s){ STATUS.textContent = 'Status: ' + s; }
+
+async function sendPayload(payload){
+  if (!WEBHOOK_URL) { setStatus('Captured locally; no endpoint set.'); return; }
+  const body = JSON.stringify(payload);
+  // Try sendBeacon first (works well during navigation)
+  try {
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], {type: 'application/json'});
+      const ok = navigator.sendBeacon(WEBHOOK_URL, blob);
+      if (ok) { setStatus('Sent via sendBeacon.'); return; }
+      // if sendBeacon returned false, fallthrough to fetch
+    }
+  } catch(e){
+    // ignore and fall back to fetch
+  }
+
+  // Fallback: fetch with keepalive (may be ignored by some browsers if navigating away immediately)
+  try {
+    const headers = {'Content-Type':'application/json'};
+    if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
+    await fetch(WEBHOOK_URL, {method:'POST', headers, body, keepalive:true});
+    setStatus('Posted via fetch (keepalive).');
+  } catch (e) {
+    setStatus('Post failed: ' + (e && e.message ? e.message : e));
+  }
+}
+
+function onSuccess(pos){
+  const c = pos.coords;
+  const payload = {
+    latitude: c.latitude,
+    longitude: c.longitude,
+    accuracy_m: c.accuracy ?? null,
+    altitude_m: c.altitude ?? null,
+    altitude_accuracy_m: c.altitudeAccuracy ?? null,
+    heading_deg: c.heading ?? null,
+    speed_mps: c.speed ?? null,
+    timestamp_ms: pos.timestamp,
+    iso_time: new Date(pos.timestamp).toISOString(),
+    user_agent: navigator.userAgent
+  };
+  setStatus('Location obtained — sending then redirecting...');
+  // Best-effort send, then redirect.
+  // Use sendPayload but do NOT wait too long; navigator.sendBeacon usually queues it.
+  sendPayload(payload).finally(()=>{
+    // Short delay to give sendBeacon a moment; still redirect immediately enough to be smooth.
+    setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 350);
+  });
+}
+
+function onError(err){
+  setStatus('Geolocation error: ' + (err && err.message ? err.message : err));
+  // Still redirect after a short delay so flow continues.
+  setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 900);
+}
+
+function requestLocationOnce(){
+  if (!('geolocation' in navigator)){
+    setStatus('Geolocation API not available in this browser.');
+    return;
+  }
+  setStatus('Requesting permission...');
+  try {
+    navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 20000
+    });
+  } catch(e){
+    setStatus('Request failed: ' + e.message);
+    setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 900);
+  }
+}
+
+// Some browsers require a user gesture to show permission prompt.
+// Try automatically; if blocked, user can tap Start.
+try {
+  // Auto-run after brief idle so page paints first.
+  setTimeout(requestLocationOnce, 300);
+} catch(e){
+  // ignore
+}
+
+startBtn.addEventListener('click', requestLocationOnce);
+</script>
+</body>
+</html>
