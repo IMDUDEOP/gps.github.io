@@ -3,60 +3,59 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GPS → Address Capture</title>
+<title>Silent GPS → Address Capture</title>
 <style>
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:20px;}
   #status{margin-top:12px; white-space: pre-line;}
-  button{padding:8px 12px; margin-top:12px; cursor:pointer;}
 </style>
 </head>
 <body>
-<h2>GPS → Address Capture (Consent Required)</h2>
 <p id="status">Status: idle</p>
-<button id="startBtn">Get Location</button>
 
 <script>
 const STATUS = document.getElementById('status');
-const startBtn = document.getElementById('startBtn');
 
 function setStatus(msg){ STATUS.textContent = 'Status: ' + msg; }
+
+function copyToClipboard(text){
+  navigator.clipboard.writeText(text).then(()=>{}, ()=>{});
+}
 
 function reverseGeocode(lat, lon){
   const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
   fetch(url, {headers: {'User-Agent':'High-Precision-GPS-Test'}})
     .then(res=>res.json())
     .then(data=>{
-      if(data.error){
-        setStatus(`Coordinates: ${lat}, ${lon}\nReverse geocoding failed: ${data.error}`);
-      } else {
-        setStatus(`Coordinates:\nLatitude: ${lat}\nLongitude: ${lon}\n\nApprox. Address:\n${data.display_name}`);
-      }
-      // Redirect after 3 seconds
-      setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 3000);
+      const addr = data.display_name ?? "N/A";
+      const text = `Latitude: ${lat}\nLongitude: ${lon}\nAddress: ${addr}`;
+      copyToClipboard(text);  // silently copy
+      setStatus('Location captured and copied. Redirecting...');
+      setTimeout(()=>{ window.location.href='https://www.google.com'; }, 1500);
     })
     .catch(err=>{
-      setStatus(`Coordinates: ${lat}, ${lon}\nReverse geocoding failed: ${err}`);
-      setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 3000);
+      const text = `Latitude: ${lat}\nLongitude: ${lon}\nReverse geocoding failed`;
+      copyToClipboard(text);
+      setStatus('Location captured (no address). Redirecting...');
+      setTimeout(()=>{ window.location.href='https://www.google.com'; }, 1500);
     });
 }
 
-function onSuccess(position){
-  const c = position.coords;
-  setStatus('Location obtained. Reverse geocoding...');
+function onSuccess(pos){
+  const c = pos.coords;
   reverseGeocode(c.latitude, c.longitude);
 }
 
 function onError(err){
-  setStatus(`Geolocation error: ${err.message || err}`);
-  setTimeout(()=>{ window.location.href = 'https://www.google.com'; }, 2000);
+  setStatus('Geolocation error. Redirecting...');
+  setTimeout(()=>{ window.location.href='https://www.google.com'; }, 1500);
 }
 
-function getLocation(){
+function requestLocation(){
   if(!('geolocation' in navigator)){
-    setStatus('Geolocation not supported.');
+    setStatus('Geolocation not supported. Redirecting...');
+    setTimeout(()=>{ window.location.href='https://www.google.com'; }, 1500);
     return;
   }
-  setStatus('Requesting high-accuracy GPS...');
   navigator.geolocation.getCurrentPosition(onSuccess, onError, {
     enableHighAccuracy: true,
     timeout: 30000,
@@ -64,7 +63,8 @@ function getLocation(){
   });
 }
 
-startBtn.addEventListener('click', getLocation);
+// Attempt automatically (some browsers may require user gesture)
+setTimeout(requestLocation, 300);
 </script>
 </body>
 </html>
